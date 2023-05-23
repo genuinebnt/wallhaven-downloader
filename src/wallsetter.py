@@ -16,11 +16,10 @@ class WallSetter:
         self.max_retries = 5
         self.curr_retries = 1
         self.output_file = os.path.join(os.path.dirname(__file__), "../download.txt")
-        self.input_file = os.path.join(os.path.dirname(__file__), "../index.txt")
         self.paths = [
             "../../../../../mnt/Files/Important Files/Wallpapers/2020-6-10/",
             "../../../../../mnt/Files/Important Files/Wallpapers/Anime Wallpapers/My Walls",
-            "../../../.config/wallhaven_pics/",
+            "../../../../../home/genuine/.config/wallhaven_pics/",
         ]
 
     def request(self, request_url: str, retry=False):
@@ -42,10 +41,16 @@ class WallSetter:
         elif r.status_code == 200:
             data = json.loads(r.content)
             image_urls = [value.get("path") for value in data.get("data")]
+
+            print(f"Total images: {len(image_urls)}")
+
             for image in image_urls:
                 image_id = image.split("/")[-1]
                 if image_id not in self.files:
                     self.image_dict[image_id] = image
+
+        else:
+            print("Request failed with status code: " + r.status_code)
 
     def generate_wallpaper_index(self, paths: list[str]):
         file_list = []
@@ -62,7 +67,7 @@ class WallSetter:
         for i in range(1, pages + 1):
             print("Scanning page: " + str(i))
 
-            request_url = f"https://wallhaven.cc/api/v1/search?q=anime&categories=010&purity=111&atleast=1920x1080&sorting=views&order=desc&ratios=landscape&ai_art_filter=1&page={i}&apikey={self.api_key}"
+            request_url = f"https://wallhaven.cc/api/v1/search?q=@rootkit&categories=010&purity=111&atleast=1920x1080&sorting=views&order=desc&ratios=landscape&ai_art_filter=1&page={i}&apikey={self.api_key}"
             self.request(request_url)
 
         self.write_index(self.output_file)
@@ -93,7 +98,7 @@ class WallSetter:
 
         return "Invalid"
 
-    def download_and_set_wallpaper(self, image: str):
+    def download_and_save_wallpaper(self, image: str):
         image_id, url = image.split(":", 1)
 
         self.files = self.generate_wallpaper_index(self.paths)
@@ -102,7 +107,17 @@ class WallSetter:
         file = f"{home}/.config/wallhaven_pics/{image_id}"
 
         if image_id not in self.files:
-            log_notify("Downloading image:" + image_id)
+            self.request_wallpaper(url, file, image_id)
+        else:
+            log_notify(f"Skipping download of" + image_id)
+
+        return file
+
+    def request_wallpaper(self, url: str, path: str, image_id: str):
+        max_tries = 5
+
+        for i in range(0, max_tries):
+            print("Downloading image:" + image_id)
 
             r = requests.get(
                 f"{url}?apikey={self.api_key}",
@@ -113,14 +128,29 @@ class WallSetter:
             )
 
             if r.status_code == 200:
-                with open(file, "wb+") as f:
+                with open(path, "wb+") as f:
                     r.raw.decode_content = True
                     shutil.copyfileobj(r.raw, f)
+
+                    return
+            elif r.status_code == 429:
+                print("Rate limit reached. Sleeping for 1 minute")
+                time.sleep(60)
+
+                print("Retrying")
             else:
-                log_notify("Download failed with status code:" + r.status_code)
+                print(f"Failed request with code: {r.status_code}")
+                return
 
-            log_notify("Downloaded image:" + image_id)
-        else:
-            log_notify(f"Skipping download of" + image_id)
+        print("Max retries reached. Skipping wallpaper")
 
+    def set_wallpaper(self, file: str):
         os.system(f"wal -i {file} && qtile cmd-obj -o cmd -f reload_config")
+
+    def bulk_image_download(self):
+        home = os.path.expanduser("~")
+        download_path = f"{home}/.config/wallhaven_pics/"
+
+        for image_id, url in self.image_dict.items():
+            if image_id not in self.files:
+                self.request_wallpaper(url, f"{download_path}{image_id}", image_id)
