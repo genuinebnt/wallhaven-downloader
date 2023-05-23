@@ -12,3 +12,7 @@ def walk_dir(path: str) -> list[str]:
         for name in files:
             file_list.append(name)
     return file_list
+
+
+def log_notify(message: str):
+    os.system("notify-send " + message)

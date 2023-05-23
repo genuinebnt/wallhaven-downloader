@@ -5,8 +5,7 @@ import os
 import shutil
 import random
 
-from gen_index import generate_wallpaper_index
-from utils import read_file
+from utils import read_file, walk_dir, log_notify
 
 
 class WallSetter:
@@ -18,8 +17,13 @@ class WallSetter:
         self.curr_retries = 1
         self.output_file = os.path.join(os.path.dirname(__file__), "../download.txt")
         self.input_file = os.path.join(os.path.dirname(__file__), "../index.txt")
+        self.paths = [
+            "../../../../../mnt/Files/Important Files/Wallpapers/2020-6-10/",
+            "../../../../../mnt/Files/Important Files/Wallpapers/Anime Wallpapers/My Walls",
+            "../../../.config/wallhaven_pics/",
+        ]
 
-    def request(self, request_url, retry=False):
+    def request(self, request_url: str, retry=False):
         if retry:
             self.curr_retries += 1
             if self.curr_retries > self.max_retries:
@@ -43,9 +47,17 @@ class WallSetter:
                 if image_id not in self.files:
                     self.image_dict[image_id] = image
 
-    def generate_wallhaven_index(self, pages: int, paths):
-        file_set = generate_wallpaper_index(paths)
-        self.files = list(file_set)
+    def generate_wallpaper_index(self, paths: list[str]):
+        file_list = []
+
+        for path in paths:
+            files = walk_dir(path)
+            file_list.extend(files)
+
+        return list(set(file_list))
+
+    def generate_wallhaven_index(self, pages: int):
+        self.files = self.generate_wallpaper_index(self.paths)
 
         for i in range(1, pages + 1):
             print("Scanning page: " + str(i))
@@ -61,20 +73,37 @@ class WallSetter:
                 if id not in self.files:
                     file.write(f"{id}:{value}\n")
 
-    def get_random_wallpaper(self):
+    def get_random_wallpaper(self) -> str:
         images = read_file(self.output_file)
 
-        idx = random.randint(0, len(images))
+        while True:
+            counter = 0
+            idx = random.randint(0, len(images))
+            image = images[idx]
+            image_id = image.split(":", 1)[0]
+            if image_id not in self.files:
+                return image
+            else:
+                counter += 1
+                log_notify("Skipping wallpaper" + image_id)
 
-        print(images[idx])
-        return images[idx]
+                if counter > 100:
+                    log_notify("Many files in downloads.txt are already downloaded")
+                    break
 
-    def download_and_set_wallpaper(self, url, image_id):
+        return "Invalid"
+
+    def download_and_set_wallpaper(self, image: str):
+        image_id, url = image.split(":", 1)
+
+        self.files = self.generate_wallpaper_index(self.paths)
+
         home = os.path.expanduser("~")
         file = f"{home}/.config/wallhaven_pics/{image_id}"
 
-        files = read_file(self.input_file)
-        if image_id not in files:
+        if image_id not in self.files:
+            log_notify("Downloading image:" + image_id)
+
             r = requests.get(
                 f"{url}?apikey={self.api_key}",
                 stream=True,
@@ -87,7 +116,11 @@ class WallSetter:
                 with open(file, "wb+") as f:
                     r.raw.decode_content = True
                     shutil.copyfileobj(r.raw, f)
+            else:
+                log_notify("Download failed with status code:" + r.status_code)
+
+            log_notify("Downloaded image:" + image_id)
         else:
-            print(f"Skipping download of: {image_id}")
+            log_notify(f"Skipping download of" + image_id)
 
         os.system(f"wal -i {file} && qtile cmd-obj -o cmd -f reload_config")

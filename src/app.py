@@ -1,6 +1,6 @@
 import os
+import argparse
 
-from gen_index import generate_wallpaper_index
 from dotenv import dotenv_values
 from wallsetter import WallSetter
 
@@ -10,16 +10,24 @@ def main():
     config = dotenv_values(f"{dotenv_path}")
     api_key = config.get("API_KEY")
 
-    paths = [
-        "../../../../../mnt/Files/Important Files/Wallpapers/2020-6-10/",
-        "../../../../../mnt/Files/Important Files/Wallpapers/Anime Wallpapers/My Walls",
-        "../../../.config/wallhaven_pics/",
-    ]
+    parser = argparse.ArgumentParser(
+        prog="wallsetter", description="downloads and set wallpaper from wallhaven"
+    )
+
+    parser.add_argument(
+        "-gi", "--generate-index", help="generate wallhaven index", action="store_true"
+    )
+    args = parser.parse_args()
 
     wall_setter = WallSetter(api_key)
-    ##wall_setter.generate_wallhaven_index(20, paths)
-    image_id, url = wall_setter.get_random_wallpaper().split(":", 1)
-    wall_setter.download_and_set_wallpaper(url, image_id)
+
+    if args.generate_index:
+        wall_setter.generate_wallhaven_index(20)
+        return
+
+    image = wall_setter.get_random_wallpaper()
+    if image != "Invalid":
+        wall_setter.download_and_set_wallpaper(image)
 
 
 if __name__ == "__main__":
